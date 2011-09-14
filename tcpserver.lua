@@ -22,16 +22,16 @@ function tcpserver.new(port)
     local read = {}
     setmetatable(read, {__index = table})
     
-    local addr, err = socket.addrinfo.new(nil, port, socket.SOCK_STREAM, 0, {'passive'})
-    assert(addr, err and "could not get addrinfo: " .. err)
-    local ca = addr
+    local ca, err = socket.addrinfo.new(nil, port, socket.SOCK_STREAM, 0, {'passive'})
+    assert(ca, err and "could not get addrinfo: " .. err)
     while ca ~= nil do
-        local s = socket.new(ca.family, ca.socktype, ca.protocol)
-        if s:bind(ca.addr, ca.addrlen, true) and s:listen() then
-            listen:insert(s)
-        else
-            s:close()
-        end
+        local s, err = socket.new(ca.family, ca.socktype, ca.protocol)
+		assert(s, err and "socket: " .. err)
+		if s:bind(ca.addr, ca.addrlen) and s:listen() then
+			listen:insert(s)
+		else
+			s:close()
+		end
         ca = ca.next
     end
     
@@ -67,7 +67,11 @@ function tcpserver.new(port)
             pi = pi + 1
         end
         for i,v in ipairs(read) do
-            if p[pi]:test('in') then
+			if p[pi]:test('err') or p[pi]:test('hup') then
+                print('lost connection #' .. tostring(i))
+                v:close()
+                read:remove(i)
+            elseif p[pi]:test('in') then
                 local buf = ffi.new('char[?]', 128)
                 local r = v:read(buf, 128)
                 if (r <= 0) then
@@ -77,11 +81,6 @@ function tcpserver.new(port)
                 else
                     print("got chars on "..tostring(i)..": " .. ffi.string(buf, r))
                 end
-            end
-            if p[pi]:test('err') or p[pi]:test('hup') then
-                print('lost connection #' .. tostring(i))
-                v:close()
-                read:remove(i)
             end
             pi = pi + 1
         end
