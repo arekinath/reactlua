@@ -58,17 +58,35 @@ struct sockproto {
 struct osockaddr {
         unsigned short  sa_family;      /* address family */
         char            sa_data[14];    /* up to 14 bytes of direct address */
-};
-struct addrinfo {
-        int ai_flags;           /* input flags */
-        int ai_family;          /* protocol family for socket */
-        int ai_socktype;        /* socket type */
-        int ai_protocol;        /* protocol for socket */
-        socklen_t ai_addrlen;   /* length of socket-address */
-        struct sockaddr *ai_addr; /* socket-address for socket */
-        char *ai_canonname;     /* canonical name for service location (iff req) */
-        struct addrinfo *ai_next; /* pointer to next in list */
-};
+};]]
+if ffi.os == 'OSX' then
+	ffi.cdef[[
+	struct addrinfo {
+	        int ai_flags;           /* input flags */
+	        int ai_family;          /* protocol family for socket */
+	        int ai_socktype;        /* socket type */
+	        int ai_protocol;        /* protocol for socket */
+	        socklen_t ai_addrlen;   /* length of socket-address */
+			char *ai_canonname;     /* canonical name for service location (iff req) */
+	        struct sockaddr *ai_addr; /* socket-address for socket */
+	        struct addrinfo *ai_next; /* pointer to next in list */
+	};
+	]]
+else
+	ffi.cdef[[
+	struct addrinfo {
+	        int ai_flags;           /* input flags */
+	        int ai_family;          /* protocol family for socket */
+	        int ai_socktype;        /* socket type */
+	        int ai_protocol;        /* protocol for socket */
+	        socklen_t ai_addrlen;   /* length of socket-address */
+	        struct sockaddr *ai_addr; /* socket-address for socket */
+	        char *ai_canonname;     /* canonical name for service location (iff req) */
+	        struct addrinfo *ai_next; /* pointer to next in list */
+	};
+	]]
+end
+ffi.cdef[[
 int     getaddrinfo(const char *, const char *,
                     const struct addrinfo *, struct addrinfo **);
 void    freeaddrinfo(struct addrinfo *);
@@ -247,9 +265,6 @@ function socket.addrinfo.new(str, port, socktype, prot, flags)
     hints[0].ai_socktype = socktype
     hints[0].ai_protocol = prot
     hints[0].ai_flags = flagmask
-    hints[0].ai_canonname = nil
-    hints[0].ai_addr = nil
-    hints[0].ai_next = nil
     
     local ai = ffi.new('struct addrinfo*[?]',1)
     local ret = ffi.C.getaddrinfo(str, tostring(port), hints, ai)
@@ -257,8 +272,7 @@ function socket.addrinfo.new(str, port, socktype, prot, flags)
         return nil, ffi.string(ffi.C.gai_strerror(ret))
     end
     
-    local aai = ai[0]
-    return ffi.gc(aai, ffi.C.freeaddrinfo)
+    return ffi.gc(ai[0], ffi.C.freeaddrinfo)
 end
 
 function socket.new(domain, type, protocol)
