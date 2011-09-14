@@ -66,9 +66,10 @@ end
 ffi.metatype('struct pollfd', {__index = pollfd})
 
 function poll.new(size)
-    local w = {_i = 0}
+    local w = {_i = 0, _map={}}
     w._pollfd = ffi.new('struct pollfd[?]', size)
     w._nfds = size
+	w.size = size
     setmetatable(w, {
         __index = function(self, idx)
             if poll[idx] then
@@ -86,7 +87,11 @@ function poll.new(size)
     return w
 end
 
-function poll:insert(fd, evts)
+function poll:map(idx)
+	return self._map[idx]
+end
+
+function poll:insert(fd, evts, map)
     self[self._i].fd = fd
     self[self._i].events = 0
     self[self._i].revents = 0
@@ -94,6 +99,9 @@ function poll:insert(fd, evts)
         self[self._i]:set(v)
     end
     self._i = self._i + 1
+	if map then
+		self._map[self._i-1] = map
+	end
 end
 
 return poll
