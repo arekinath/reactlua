@@ -40,9 +40,12 @@ end
 function sockwrap:write(string, cb)
 	local buf = ffi.new('char[?]', #string + 1)
 	ffi.copy(buf, string)
-	if self._socket:write(buf, #string) < 0 then
+	self:write_buf(buf, #string, cb)
+end
+function sockwrap:write_buf(buf, len, cb)
+	if self._socket:write(buf, len) < 0 then
 		self._write_cb = function(serv, sock)
-			sock._socket:write(buf, #string)
+			sock._socket:write(buf, len)
 			if cb then cb(serv, sock) end
 		end
 		self._server._write:insert(self)
@@ -55,7 +58,7 @@ function sockwrap:read_until(delim, max, cb)
 	local offset = 0
 	self._read_cb = function(serv, sock)
 		local ret = sock._socket:read(buf+offset, 1)
-		if ret < 0 and ffi.errno() ~= 35 and ffi.errno() ~= 11 then
+		if ret <= 0 and ffi.errno() ~= 35 and ffi.errno() ~= 11 then
 			sock:close()
 		else
 			if ret < 0 then ret = 0 end		-- deal with eagain/ewouldblock
@@ -79,7 +82,7 @@ function sockwrap:read(size, cb)
 	local offset = 0
 	self._read_cb = function(serv, sock)
 		local ret = sock._socket:read(buf+offset, size-offset)
-		if ret < 0 and ffi.errno() ~= 35 and ffi.errno() ~= 11 then
+		if ret <= 0 and ffi.errno() ~= 35 and ffi.errno() ~= 11 then
 			sock:close()
 		else
 			if ret < 0 then ret = 0 end		-- deal with eagain/ewouldblock
@@ -93,7 +96,22 @@ function sockwrap:read(size, cb)
 	end
 	self._server._read:insert(self)
 end
-function sockwrap:pipe(other)
+function sockwrap:pipe(other, size)
+	size = size or 4096
+	local buf = ffi.new('char[?]', size)
+	self._read_cb = function(serv, sock)
+		local ret = sock._socket:read(buf, size)
+		if ret <= 0 and ffi.errno() ~= 35 and ffi.errno() ~= 11 then
+			sock:close()
+			other:close()
+		else 
+			if ret <= 0 then return 'again' end
+			other:write_buf(buf, ret, function(serv, sock)
+				self._server._read:insert(self)
+			end)
+		end
+	end
+	self._server._read:insert(self)
 end
 function sockwrap:close()
 	self._socket:close()

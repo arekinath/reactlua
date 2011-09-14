@@ -3,6 +3,8 @@ local fcntl = require('fcntl')
 local ffi = require('ffi')
 
 local string = string
+local ipairs = ipairs
+local setmetatable = setmetatable
 
 file = {}
 local file = file
