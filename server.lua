@@ -93,6 +93,8 @@ function sockwrap:read(size, cb)
 	end
 	self._server._read:insert(self)
 end
+function sockwrap:pipe(other)
+end
 function sockwrap:close()
 	self._socket:close()
 	if self._read_idx then self._server._read:remove(self._read_idx) end
@@ -124,6 +126,10 @@ function server.new()
 	w._write = delaytable.new()
 	setmetatable(w, {__index=server})
 	return w
+end
+
+function server:wrap(obj)
+	return sockwrap.new(self, obj)
 end
 
 function server:go()
