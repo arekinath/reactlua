@@ -308,6 +308,15 @@ function socket:listen(backlog)
     return ret
 end
 
+function socket:connect(addr, len)
+	len = len or addr.sa_len
+	local ret = ffi.C.connect(self.fd, addr, len)
+	if ret < 0 then
+		return nil, ffi.string(ffi.C.strerror(ffi.errno()))
+	end
+	return ret
+end
+
 function socket:accept()
     local sa = ffi.cast("struct sockaddr*", ffi.new("char[?]", 256))
     local salen = ffi.new("socklen_t[?]", 1)
