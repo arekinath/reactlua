@@ -32,33 +32,65 @@ typedef uint16_t in_port_t;
 struct in_addr {
     in_addr_t s_addr;
 };
-struct sockaddr {
-        uint8_t    sa_len;             /* total length */
-        sa_family_t sa_family;          /* address family */
-        char        sa_data[14];        /* actually longer; address value */
-};
-struct sockaddr_in {
-        uint8_t    sin_len;
-        sa_family_t sin_family;
-        in_port_t   sin_port;
-        struct      in_addr sin_addr;
-        int8_t      sin_zero[8];
-};
 struct in6_addr {
-    union {
-        uint8_t   __u6_addr8[16];
-        uint16_t  __u6_addr16[8];
-        uint32_t  __u6_addr32[4];
-    } __u6_addr;                    /* 128-bit IP6 address */
-};
-struct sockaddr_in6 {
-        uint8_t        sin6_len;       /* length of this struct(sa_family_t)*/
-        sa_family_t     sin6_family;    /* AF_INET6 (sa_family_t) */
-        in_port_t       sin6_port;      /* Transport layer port # (in_port_t)*/
-        uint32_t       sin6_flowinfo;  /* IP6 flow information */
-        struct in6_addr sin6_addr;      /* IP6 address */
-        uint32_t       sin6_scope_id;  /* intface scope id */
-};
+		union {
+			uint8_t   __u6_addr8[16];
+			uint16_t  __u6_addr16[8];
+			uint32_t  __u6_addr32[4];
+		} __u6_addr;                    /* 128-bit IP6 address */
+	};
+]]
+if ffi.os == 'Linux' then
+	-- linux likes to be different and not have any sa_len fields...
+	ffi.cdef[[
+	struct sockaddr {
+			sa_family_t sa_family;          /* address family */
+			char        sa_data[14];        /* actually longer; address value */
+	};
+	struct sockaddr_in {
+			sa_family_t sin_family;
+			in_port_t   sin_port;
+			struct      in_addr sin_addr;
+			int8_t      sin_zero[8];
+	};
+	struct sockaddr_in6 {
+			sa_family_t     sin6_family;    /* AF_INET6 (sa_family_t) */
+			in_port_t       sin6_port;      /* Transport layer port # (in_port_t)*/
+			uint32_t       sin6_flowinfo;  /* IP6 flow information */
+			struct in6_addr sin6_addr;      /* IP6 address */
+	};]]
+	local mt = {__index = function(self,idx)
+		if idx == 'sa_len' or idx == 'sin_len' or idx == 'sin6_len' then
+			return false
+		end
+	end}
+	ffi.metatype('struct sockaddr', mt)
+	ffi.metatype('struct sockaddr_in', mt)
+	ffi.metatype('struct sockaddr_in6', mt)
+else
+	ffi.cdef[[
+	struct sockaddr {
+			uint8_t    sa_len;             /* total length */
+			sa_family_t sa_family;          /* address family */
+			char        sa_data[14];        /* actually longer; address value */
+	};
+	struct sockaddr_in {
+			uint8_t    sin_len;
+			sa_family_t sin_family;
+			in_port_t   sin_port;
+			struct      in_addr sin_addr;
+			int8_t      sin_zero[8];
+	};
+	struct sockaddr_in6 {
+			uint8_t        sin6_len;       /* length of this struct(sa_family_t)*/
+			sa_family_t     sin6_family;    /* AF_INET6 (sa_family_t) */
+			in_port_t       sin6_port;      /* Transport layer port # (in_port_t)*/
+			uint32_t       sin6_flowinfo;  /* IP6 flow information */
+			struct in6_addr sin6_addr;      /* IP6 address */
+			uint32_t       sin6_scope_id;  /* intface scope id */
+	};]]
+end
+ffi.cdef[[
 struct sockproto {
         unsigned short  sp_family;      /* address family */
         unsigned short  sp_protocol;    /* protocol */

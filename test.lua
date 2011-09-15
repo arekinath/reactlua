@@ -2,6 +2,7 @@ local tcpserver = require('tcpserver')
 local socket = require('socket')
 local ffi = require('ffi')
 local file = require('file')
+local unbound = require('unbound')
 
 local serv = tcpserver.new(arg[1] or 8080)
 
@@ -24,7 +25,8 @@ function parse_header(line)
 	i,j = url:find("^[a-z]+://")
 	if i and j then
 		ret.url.protocol = url:sub(i,j-3)
-		ret.url.port = ret.url.protocol			--default
+		local lkup = {http=80, https=443}
+		ret.url.port = lkup[ret.url.protocol]
 		url = url:sub(j+1)
 	end
 	
@@ -54,29 +56,101 @@ serv:listen(function(serv, parent, sock)
 	
 	print(sock, "new conn: " .. sock.remote.host .. ":" .. sock.remote.port)
 	
+	function self.line_cb(_, _, line)
+		table.insert(self.lines, line)
+		if #self.lines == 1 then
+			self.head = parse_header(self.lines[1])
+			if not self.head then
+				print(sock, "invalid request")
+				sock:write("HTTP/1.0 400 Invalid Request\r\n\r\n", function(serv, sock) sock:close() end)
+				return
+			end
+		elseif line == '\r\n' then
+			return self.process(self.head)
+		end
+		sock:read_line(self.line_cb)
+	end
+	
+	function self.try_connect(family, addr, len)
+		print("try_connect")
+		local s = socket.new(family, socket.SOCK_STREAM, socket.IPPROTO_TCP)
+		
+		local ar = nil
+		local port = socket.htons(tonumber(self.head.url.port or 80))
+		if family == socket.AF_INET then
+			a = ffi.new("struct sockaddr_in[?]", 1)
+			if a[0].sin_len then a[0].sin_len = ffi.sizeof(a[0]) end
+			a[0].sin_port = port
+			a[0].sin_family = family
+			ffi.copy(a[0].sin_addr, addr, ffi.sizeof(addr[0]))
+		elseif family == socket.AF_INET6 then
+			a = ffi.new("struct sockaddr_in6[?]", 1)
+			if a[0].sin6_len then a[0].sin6_len = ffi.sizeof(a[0]) end
+			a[0].sin6_port = port
+			a[0].sin6_family = family
+			ffi.copy(a[0].sin6_addr, addr, ffi.sizeof(addr[0]))
+		end
+		local ok,err = s:connect(ffi.cast('struct sockaddr*', a), ffi.sizeof(a[0]))
+		if not ok then
+			print("try_connect fail: ".. err or '')
+			return nil, err
+		end
+		return s
+	end
+	
 	function self.process(head)
 		local head = self.head
-		local addr, err = socket.addrinfo.new(head.url.host, head.url.port, socket.SOCK_STREAM)
-		if not addr then
-			print(sock, "500 " .. head.url.raw)
+		local v4, v6 = unbound.resolver.new(head.url.host)
+		if not v4 or not v6 then
+			local err = v6
 			local resp = "HTTP/1.0 500 Internal Server Error\r\n\r\n"
 			resp = resp .. "Proxy connect failed: " .. err .. "\r\n"
 			print(err)
 			sock:write(resp, function() sock:close() end)
 			return
 		end
-		local s = socket.new(addr.family, addr.socktype, addr.protocol)
-		local ok,err = s:connect(addr.addr, addr.addrlen)
-		if not ok then
-			print(sock, "500 " .. head.url.raw)
-			local resp = "HTTP/1.0 500 Internal Server Error\r\n\r\n"
-			resp = resp .. "Proxy connect failed: " .. err .. "\r\n"
-			print(err)
-			sock:write(resp, function() sock:close() end)
-			return
+		v4 = serv:wrap(v4)
+		v6 = serv:wrap(v6)
+		-- make sure they don't get gc'd
+		self._v4 = v4
+		self._v6 = v6
+		
+		local count = 0
+		local wait_cb = function(_, v)
+			count = count + 1
+			local res, err = v:get_result()
+			if count == 2 and (v6.result ~= nil or v4.result ~= nil) then
+				if v6.result ~= nil then
+					for i,addr,len in v6.result:addrs() do
+						local rsock = self.try_connect(socket.AF_INET6, addr, len)
+						if rsock then
+							return self.proxy(rsock)
+						end
+					end
+				end
+				if v4.result ~= nil then
+					for i,addr,len in v4.result:addrs() do
+						local rsock = self.try_connect(socket.AF_INET, addr, len)
+						if rsock then
+							return self.proxy(rsock)
+						end
+					end
+				end
+			end
+			if count == 2 then
+				local resp = "HTTP/1.0 500 Internal Server Error\r\n\r\n"
+				resp = resp .. "Proxy connect failed\r\n"
+				sock:write(resp, function() sock:close() end)
+			end
 		end
 		
-		s = serv:wrap(s)
+		v4:wait_read(wait_cb)
+		v6:wait_read(wait_cb)
+	end
+	
+	function self.proxy(rsock)
+		local head = self.head
+		local s = serv:wrap(rsock)
 		
 		print(sock, s, "[" .. sock.remote.host .. "] '" .. head.method .. "' " .. head.url.raw)
 		if head.method == 'CONNECT' then
@@ -116,21 +190,6 @@ serv:listen(function(serv, parent, sock)
 				sock:pipe(s)
 			end)
 		end
-	end
-	
-	function self.line_cb(_, _, line)
-		table.insert(self.lines, line)
-		if #self.lines == 1 then
-			self.head = parse_header(self.lines[1])
-			if not self.head then
-				print(sock, "invalid request")
-				sock:write("HTTP/1.0 400 Invalid Request\r\n\r\n", function(serv, sock) sock:close() end)
-				return
-			end
-		elseif line == '\r\n' then
-			return self.process(self.head)
-		end
-		sock:read_line(self.line_cb)
 	end
 	
 	sock:read_line(self.line_cb)

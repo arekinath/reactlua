@@ -13,7 +13,7 @@
 /* unbound shim */
 /****************/
 
-static struct ub_result *last_result;
+static struct ub_result *last_result = NULL;
 static int last_err;
 
 static void callback(void *data, int err, struct ub_result *result)
@@ -29,7 +29,9 @@ static void callback(void *data, int err, struct ub_result *result)
 
 struct ub_result *ubshim_get_result(void)
 {
-	return last_result;
+	struct ub_result *r = last_result;
+	last_result = NULL;
+	return r;
 }
 
 int ubshim_get_err(void)
@@ -37,7 +39,7 @@ int ubshim_get_err(void)
 	return last_err;
 }
 
-int ubshim_resolve_async(struct ub_ctx* ctx, char* name, int rrtype, int rrclass, int* async_id)
+int ubshim_resolve_async(struct ub_ctx* ctx, const char* name, int rrtype, int rrclass, int* async_id)
 {
 	return ub_resolve_async(ctx, name, rrtype, rrclass, NULL, callback, async_id);
 }
@@ -57,9 +59,7 @@ static struct map mappings[] = {
 	{ "AF_LOCAL", AF_LOCAL },
 	{ "AF_UNIX", AF_UNIX },
 	{ "AF_INET", AF_INET },
-#ifdef AF_INET6
 	{ "AF_INET6", AF_INET6 },
-#endif
 	{ "SO_ACCEPTCONN", SO_ACCEPTCONN },
 	{ "SO_REUSEADDR", SO_REUSEADDR },
 	{ "SO_KEEPALIVE", SO_KEEPALIVE },

@@ -83,6 +83,10 @@ function sockwrap:read_line(cb)
 		cb(serv, sock, ffi.string(buf))
 	end)
 end
+function sockwrap:wait_read(cb)
+	self._read_cb = cb
+	self._server._read:insert(self)
+end
 function sockwrap:read(size, cb)
 	local buf = ffi.new('char[?]', size+1)
 	local offset = 0
