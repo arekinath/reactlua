@@ -15,6 +15,14 @@ local socket = socket
 setfenv(1, socket)
 
 ffi.cdef[[
+uint32_t shim_get_symbol(const char *name);
+uint8_t shim_canon_first(void);
+]]
+
+local shim = ffi.load("luaevent_shim")
+
+
+ffi.cdef[[
 typedef long ssize_t;
 extern int h_errno;
 typedef uint8_t sa_family_t;
@@ -59,7 +67,7 @@ struct osockaddr {
         unsigned short  sa_family;      /* address family */
         char            sa_data[14];    /* up to 14 bytes of direct address */
 };]]
-if ffi.os == 'OSX' then
+if shim.shim_canon_first() == 1 then
 	ffi.cdef[[
 	struct addrinfo {
 	        int ai_flags;           /* input flags */
@@ -120,98 +128,20 @@ const char *gai_strerror(int errcode);
 char *strerror(int errnum);
 ]]
 
-SOCK_STREAM = bit.tobit(1)
-SOCK_DGRAM = bit.tobit(2)
-SOCK_RAW = bit.tobit(3)
-SOCK_RDM = bit.tobit(4)
-SOCK_SEQPACKET = bit.tobit(5)
-SO_DEBUG = bit.tobit(0x0001)
-SO_ACCEPTCONN = bit.tobit(0x0002)
-SO_REUSEADDR = bit.tobit(0x0004)
-SO_KEEPALIVE = bit.tobit(0x0008)
-SO_DONTROUTE = bit.tobit(0x0010)
-SO_BROADCAST = bit.tobit(0x0020)
-SO_USELOOPBACK = bit.tobit(0x0040)
-SO_LINGER = bit.tobit(0x0080)
-SO_OOBINLINE = bit.tobit(0x0100)
-SO_REUSEPORT = bit.tobit(0x0200)
-SO_JUMBO = bit.tobit(0x0400)
-SO_TIMESTAMP = bit.tobit(0x0800)
-SO_BINDANY = bit.tobit(0x1000)
-AF_UNSPEC = bit.tobit(0)
-AF_LOCAL = bit.tobit(1)
-AF_UNIX = AF_LOCAL
-AF_INET = bit.tobit(2)
-AF_IMPLINK = bit.tobit(3)
-AF_PUP = bit.tobit(4)
-AF_CHAOS = bit.tobit(5)
-AF_NS = bit.tobit(6)
-AF_ISO = bit.tobit(7)
-AF_OSI = AF_ISO
-AF_ECMA = bit.tobit(8)
-AF_DATAKIT = bit.tobit(9)
-AF_CCITT = bit.tobit(10)
-AF_SNA = bit.tobit(11)
-AF_DECnet = bit.tobit(12)
-AF_DLI = bit.tobit(13)
-AF_LAT = bit.tobit(14)
-AF_HYLINK = bit.tobit(15)
-AF_APPLETALK = bit.tobit(16)
-AF_ROUTE = bit.tobit(17)
-AF_LINK = bit.tobit(18)
-AF_COIP = bit.tobit(20)
-AF_CNT = bit.tobit(21)
-AF_IPX = bit.tobit(23)
-
-NETDB_INTERNAL = bit.tobit(-1)
-NETDB_SUCCESS = bit.tobit(0)
-HOST_NOT_FOUND = bit.tobit(1)
-TRY_AGAIN = bit.tobit(2)
-NO_RECOVERY = bit.tobit(3)
-NO_DATA = bit.tobit(4)
-NO_ADDRESS = NO_DATA
-NI_NUMERICHOST = bit.tobit(1)
-NI_NUMERICSERV = bit.tobit(2)
-NI_NOFQDN = bit.tobit(4)
-NI_NAMEREQD = bit.tobit(8)
-NI_DGRAM = bit.tobit(16)
-
-AI_PASSIVE = bit.tobit(1)
-AI_CANONNAME = bit.tobit(2)
-AI_NUMERICHOST = bit.tobit(4)
-AI_EXT = bit.tobit(8)
-AI_NUMERICSERV = bit.tobit(16)
-
-IPPROTO_IP = bit.tobit(0)
-IPPROTO_HOPOPTS = bit.tobit(IPPROTO_IP)
-IPPROTO_ICMP = bit.tobit(1)
-IPPROTO_IGMP = bit.tobit(2)
-IPPROTO_GGP = bit.tobit(3)
-IPPROTO_IPIP = bit.tobit(4)
-IPPROTO_TCP = bit.tobit(6)
-IPPROTO_EGP = bit.tobit(8)
-IPPROTO_PUP = bit.tobit(12)
-IPPROTO_UDP = bit.tobit(17)
-IPPROTO_IDP = bit.tobit(22)
-IPPROTO_TP = bit.tobit(29)
-IPPROTO_ROUTING = bit.tobit(43)
-IPPROTO_FRAGMENT = bit.tobit(44)
-IPPROTO_RSVP = bit.tobit(46)
-IPPROTO_GRE = bit.tobit(47)
-IPPROTO_ESP = bit.tobit(50)
-IPPROTO_AH = bit.tobit(51)
-IPPROTO_MOBILE = bit.tobit(55)
-IPPROTO_NONE = bit.tobit(59)
-IPPROTO_DSTOPTS = bit.tobit(60)
-IPPROTO_EON = bit.tobit(80)
-IPPROTO_ETHERIP = bit.tobit(97)
-IPPROTO_ENCAP = bit.tobit(98)
-IPPROTO_PIM = bit.tobit(103)
-IPPROTO_IPCOMP = bit.tobit(108)
-IPPROTO_CARP = bit.tobit(112)
-IPPROTO_MPLS = bit.tobit(137)
-IPPROTO_PFSYNC = bit.tobit(240)
-IPPROTO_RAW = bit.tobit(255)
+local syms = {'SOCK_STREAM', 'SOCK_DGRAM', 'SOCK_RAW', 'SOCK_RDM', 'SOCK_SEQPACKET',
+	'SO_ACCEPTCONN', 'SO_REUSEADDR', 'SO_KEEPALIVE', 'SO_DONTROUTE',
+	'SO_BROADCAST', 'SO_USELOOPBACK', 'SO_LINGER', 'SO_OOBINLINE',
+	'SO_REUSEPORT', 'SO_JUMBO', 'SO_TIMESTAMP', 'SO_BINDANY', 'AF_UNSPEC',
+	'AF_LOCAL', 'AF_UNIX', 'AF_INET', 'NETDB_INTERNAL', 'NETDB_SUCCESS',
+	'HOST_NOT_FOUND', 'TRY_AGAIN', 'NO_RECOVERY', 'NO_DATA', 'NO_ADDRESS',
+	'NI_NUMERICHOST', 'NI_NUMERICSERV', 'NI_NOFQDN', 'NI_NAMEREQD', 'NI_DGRAM',
+	'AI_PASSIVE', 'AI_CANONNAME', 'AI_NUMERICHOST', 'AI_EXT', 'AI_NUMERICSERV',
+	'IPPROTO_IP', 'IPPROTO_HOPOPTS', 'IPPROTO_ICMP', 'IPPROTO_IGMP',
+	'IPPROTO_GGP', 'IPPROTO_IPIP', 'IPPROTO_TCP', 'IPPROTO_EGP', 'IPPROTO_PUP',
+	'IPPROTO_UDP'}
+for i,v in ipairs(syms) do
+	socket[v] = shim.shim_get_symbol(v)
+end
 
 htonl = function(val)
     if ffi.abi('le') then
@@ -275,6 +205,17 @@ function socket.addrinfo.new(str, port, socktype, prot, flags)
     return ffi.gc(ai[0], ffi.C.freeaddrinfo)
 end
 
+function socket:get_remote()
+	local host = ffi.new("char[?]", 256)
+	local serv = ffi.new("char[?]", 16)
+	local r = ffi.C.getnameinfo(self.addr, self.addrlen, host, 256, serv, 16,
+						bit.bor(NI_NUMERICSERV, NI_NUMERICHOST))
+	if r ~= 0 then
+		return nil, ffi.string(ffi.C.gai_strerror(r))
+	end
+	return {host = ffi.string(host), port = ffi.string(serv)}
+end
+
 function socket.new(domain, type, protocol)
     domain = domain or AF_INET
     type = type or SOCK_STREAM
@@ -285,7 +226,7 @@ function socket.new(domain, type, protocol)
         return nil, ffi.string(ffi.C.strerror(ffi.errno()))
     end
 
-    local w = {fd = fd}
+    local w = {fd = fd, family = domain, socktype = type, protocol = protocol}
     setmetatable(w, {__index = socket})
     return w
 end
@@ -318,14 +259,19 @@ function socket:connect(addr, len)
 end
 
 function socket:accept()
-    local sa = ffi.cast("struct sockaddr*", ffi.new("char[?]", 256))
+	local abuf = ffi.new("char[?]", 256)
+    local sa = ffi.cast("struct sockaddr*", abuf)
     local salen = ffi.new("socklen_t[?]", 1)
+	salen[0] = 256
     local fd = ffi.C.accept(self.fd, sa, salen)
     if fd < 0 then
         return nil, ffi.string(ffi.C.strerror(ffi.errno()))
     end
-    local w = {fd = fd, addr = sa}
+    local w = {fd = fd, _abuf = abuf, addr = sa, _lenbuf = salen, addrlen = salen[0]}
     setmetatable(w, {__index = socket})
+	local remote, err = w:get_remote()
+	assert(remote ~= nil, err and 'getnameinfo: ' .. err)
+	w.remote = remote
     return w
 end
 

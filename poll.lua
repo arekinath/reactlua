@@ -18,19 +18,16 @@ typedef struct pollfd {
     short   revents;
 } pollfd_t;
 int   poll(struct pollfd[], nfds_t, int);
+uint32_t shim_get_symbol(const char *name);
 ]]
 
-POLLIN = bit.tobit(0x0001)
-POLLPRI = bit.tobit(0x0002)
-POLLOUT = bit.tobit(0x0004)
-POLLERR = bit.tobit(0x0008)
-POLLHUP = bit.tobit(0x0010)
-POLLNVAL = bit.tobit(0x0020)
-POLLRDNORM = bit.tobit(0x0040)
-POLLNORM = POLLRDNORM
-POLLWRNORM = POLLOUT
-POLLRDBAND = bit.tobit(0x0080)
-POLLWRBAND = bit.tobit(0x0100)
+local shim = ffi.load("luaevent_shim")
+
+syms = {'POLLIN', 'POLLPRI', 'POLLOUT', 'POLLERR', 'POLLHUP', 'POLLNVAL',
+	'POLLRDNORM', 'POLLNORM', 'POLLWRNORM', 'POLLRDBAND', 'POLLWRBAND'}
+for i,v in ipairs(syms) do
+	poll[v] = shim.shim_get_symbol(v)
+end
 
 local pollfd = {}
 function pollfd:set(mask)
@@ -66,7 +63,7 @@ end
 ffi.metatype('struct pollfd', {__index = pollfd})
 
 function poll.new(size)
-    local w = {_i = 0, _map={}}
+    local w = {_i = 0, _map={}, _fdmap={}}
     w._pollfd = ffi.new('struct pollfd[?]', size)
     w._nfds = size
 	w.size = size
@@ -92,15 +89,24 @@ function poll:map(idx)
 end
 
 function poll:insert(fd, evts, map)
-    self[self._i].fd = fd
-    self[self._i].events = 0
-    self[self._i].revents = 0
-    for i,v in ipairs(evts) do
-        self[self._i]:set(v)
-    end
-    self._i = self._i + 1
-	if map then
-		self._map[self._i-1] = map
+	if self._fdmap[fd] then
+		local i = self._fdmap[fd]
+		for i,v in ipairs(evts) do
+			self[i]:set(v)
+		end
+		self._nfds = self._nfds - 1
+		self.size = self._nfds
+	else
+		self[self._i].fd = fd
+		self[self._i].events = 0
+		self[self._i].revents = 0
+		for i,v in ipairs(evts) do
+			self[self._i]:set(v)
+		end
+		self._i = self._i + 1
+		if map then
+			self._map[self._i-1] = map
+		end
 	end
 end
 

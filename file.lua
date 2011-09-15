@@ -17,16 +17,17 @@ int close(int fildes);
 ssize_t read(int fildes, void *buf, size_t nbyte);
 ssize_t write(int fildes, const void *buf, size_t nbyte);
 char *strerror(int errnum);
+uint32_t shim_get_symbol(const char *name);
 ]]
 
-O_RDONLY = bit.tobit(0x0000)
-O_WRONLY = bit.tobit(0x0001)
-O_RDWR = bit.tobit(0x0002)
-O_ACCMODE = bit.tobit(0x0003)
-O_NONBLOCK = bit.tobit(0x0004)
-O_APPEND = bit.tobit(0x0008)
-O_CREAT = bit.tobit(0x0200)
-O_TRUNC = bit.tobit(0x0400)
+local shim = ffi.load("luaevent_shim")
+
+local syms = {'O_RDONLY', 'O_WRONLY', 'O_RDWR', 'O_CREAT', 'O_EXCL',
+	'O_NOCTTY', 'O_TRUNC', 'O_APPEND', 'O_NONBLOCK', 'O_NDELAY', 'O_SYNC',
+	'O_FSYNC', 'O_ASYNC'}
+for i,v in ipairs(syms) do
+	file[v] = shim.shim_get_symbol(v)
+end
 
 function file.open(path, flags)
 	local flagmask = O_NONBLOCK

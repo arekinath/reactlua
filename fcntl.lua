@@ -2,7 +2,9 @@ local ffi = require('ffi')
 local bit = require('bit')
 
 local string = string
+local print = print
 local type = type
+local ipairs = ipairs
 
 fcntl = {}
 local fcntl = fcntl
@@ -10,19 +12,17 @@ setfenv(1, fcntl)
 
 ffi.cdef[[
 int     fcntl(int, int, ...);
+uint32_t shim_get_symbol(const char *name);
 ]]
 
-O_NONBLOCK = bit.tobit(0x0004)
-O_APPEND = bit.tobit(0x0008)
-O_SHLOCK = bit.tobit(0x0010)
-O_EXLOCK = bit.tobit(0x0020)
-O_ASYNC = bit.tobit(0x0040)
-O_FSYNC = bit.tobit(0x0080)
-O_NOFOLLOW = bit.tobit(0x0100)
-O_SYNC = bit.tobit(0x0080)
-O_CREAT = bit.tobit(0x0200)
-O_TRUNC = bit.tobit(0x0400)
-O_EXCL = bit.tobit(0x0800)
+local shim = ffi.load("luaevent_shim")
+
+local syms = {'O_RDONLY', 'O_WRONLY', 'O_RDWR', 'O_CREAT', 'O_EXCL',
+	'O_NOCTTY', 'O_TRUNC', 'O_APPEND', 'O_NONBLOCK', 'O_NDELAY', 'O_SYNC',
+	'O_FSYNC', 'O_ASYNC'}
+for i,v in ipairs(syms) do
+	fcntl[v] = shim.shim_get_symbol(v)
+end
 
 F_DUPFD = bit.tobit(0)
 F_GETFD = bit.tobit(1)
@@ -34,26 +34,23 @@ function fcntl.dupfd(fd)
     return ffi.C.fcntl(fd, F_DUPFD)
 end
 
-function fcntl.getflag(fd, flag)
-    if type(flag) == 'string' then
-        if fcntl[string.upper(flag)] then
-            flag = fcntl[string.upper(flag)]
-        elseif fcntl['O_'..string.upper(flag)] then
-            flag = fcntl['O_'..string.upper(flag)]
-        end
-    end
-    return ffi.C.fcntl(fd, F_GETFL, flag)
+function fcntl.getflags(fd)
+	local r = ffi.C.fcntl(fd, F_GETFL)
+    if r < 0 then r = 0 end
+	return bit.tobit(r)
 end
 
-function fcntl.setflag(fd, flag)
+function fcntl.setflag(fd, flag, erase)
+	mask = fcntl.getflags(fd)
+	if erase then mask = bit.tobit(0) end
     if type(flag) == 'string' then
         if fcntl[string.upper(flag)] then
-            flag = fcntl[string.upper(flag)]
+            mask = bit.bor(mask, fcntl[string.upper(flag)])
         elseif fcntl['O_'..string.upper(flag)] then
-            flag = fcntl['O_'..string.upper(flag)]
+            mask = bit.bor(mask, fcntl['O_'..string.upper(flag)])
         end
     end
-    return ffi.C.fcntl(fd, F_SETFL, flag)
+    return ffi.C.fcntl(fd, F_SETFL, mask)
 end
 
 return fcntl
