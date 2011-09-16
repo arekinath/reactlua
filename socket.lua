@@ -7,6 +7,7 @@ local tonumber = tonumber
 local ipairs = ipairs
 local assert = assert
 local tostring = tostring
+local tonumber = tonumber
 local string = string
 local print = print
 
@@ -174,7 +175,7 @@ local syms = {'SOCK_STREAM', 'SOCK_DGRAM', 'SOCK_RAW', 'SOCK_RDM', 'SOCK_SEQPACK
 	'IPPROTO_GGP', 'IPPROTO_IPIP', 'IPPROTO_TCP', 'IPPROTO_EGP', 'IPPROTO_PUP',
 	'IPPROTO_UDP', 'SHUT_RD', 'SHUT_WR', 'SHUT_RDWR'}
 for i,v in ipairs(syms) do
-	socket[v] = shim.shim_get_symbol(v)
+	socket[v] = bit.tobit(tonumber(shim.shim_get_symbol(v)))
 end
 
 htonl = function(val)

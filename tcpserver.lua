@@ -36,6 +36,7 @@ function tcpserver.new(port)
 		assert(s, err and "socket: " .. err)
 		if s:bind(ca.addr, ca.addrlen) and s:listen() then
 			local sw = server.sockwrap.new(self, s)
+			sw.notimeout = true
 			sw:accept(function(serv, parent, sock)
 				self._listen_callback(serv, parent, sock)
 			end)

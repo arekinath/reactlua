@@ -5,6 +5,8 @@ local string = string
 local print = print
 local type = type
 local ipairs = ipairs
+local tonumber = tonumber
+local assert = assert
 
 fcntl = {}
 local fcntl = fcntl
@@ -21,7 +23,7 @@ local syms = {'O_RDONLY', 'O_WRONLY', 'O_RDWR', 'O_CREAT', 'O_EXCL',
 	'O_NOCTTY', 'O_TRUNC', 'O_APPEND', 'O_NONBLOCK', 'O_NDELAY', 'O_SYNC',
 	'O_FSYNC', 'O_ASYNC'}
 for i,v in ipairs(syms) do
-	fcntl[v] = shim.shim_get_symbol(v)
+	fcntl[v] = bit.tobit(tonumber(shim.shim_get_symbol(v)))
 end
 
 F_DUPFD = bit.tobit(0)
@@ -40,16 +42,14 @@ function fcntl.getflags(fd)
 	return bit.tobit(r)
 end
 
-function fcntl.setflag(fd, flag, erase)
-	mask = fcntl.getflags(fd)
-    if type(flag) == 'string' then
-        if fcntl[string.upper(flag)] then
-            mask = bit.bor(mask, fcntl[string.upper(flag)])
-        elseif fcntl['O_'..string.upper(flag)] then
-            mask = bit.bor(mask, fcntl['O_'..string.upper(flag)])
-        end
-    end
-    return ffi.C.fcntl(fd, F_SETFL, mask)
+function fcntl.setflags(fd, flags)
+	local mask = ffi.new('long[?]', 1)
+	mask[0] = fcntl.getflags(fd)
+	for i,flag in ipairs(flags) do
+		mask[0] = bit.bor(bit.tobit(tonumber(mask[0])), fcntl['O_'..string.upper(flag)])
+	end
+	local ret = ffi.C.fcntl(fd, F_SETFL, mask[0])
+	return ret
 end
 
 function fcntl.unsetflag(fd, flag)

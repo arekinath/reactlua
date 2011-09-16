@@ -5,6 +5,9 @@ local setmetatable = setmetatable
 local type = type
 local string = string
 local ipairs = ipairs
+local tonumber = tonumber
+local os = os
+local print = print
 
 poll = {}
 local poll = poll
@@ -24,9 +27,9 @@ uint32_t shim_get_symbol(const char *name);
 local shim = ffi.load("luaevent_shim")
 
 syms = {'POLLIN', 'POLLPRI', 'POLLOUT', 'POLLERR', 'POLLHUP', 'POLLNVAL',
-	'POLLRDNORM', 'POLLNORM', 'POLLWRNORM', 'POLLRDBAND', 'POLLWRBAND'}
+	'POLLRDNORM', 'POLLNORM', 'POLLWRNORM'}
 for i,v in ipairs(syms) do
-	poll[v] = shim.shim_get_symbol(v)
+	poll[v] = bit.tobit(tonumber(shim.shim_get_symbol(v)))
 end
 
 local pollfd = {}
@@ -78,7 +81,7 @@ function poll.new(size)
             end
         end,
         __call = function(self, timeout)
-            return ffi.C.poll(w._pollfd, w._nfds, -1)
+            return ffi.C.poll(w._pollfd, w._nfds, timeout or -1)
         end
     })
     return w

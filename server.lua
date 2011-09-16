@@ -11,6 +11,7 @@ local print = print
 local tostring = tostring
 local table = table
 local setmetatable = setmetatable
+local os = os
 
 server = {}
 local server = server
@@ -31,8 +32,8 @@ EINPROGRESS = shim.shim_get_symbol('EINPROGRESS')
 
 sockwrap = {}
 function sockwrap.new(server, socket)
-	local w = {_server = server, _socket = socket}
-	fcntl.setflag(socket.fd, 'nonblock', true)
+	local w = {_server = server, _socket = socket, last_event = os.time()}
+	fcntl.setflags(socket.fd, {'RDWR', 'NONBLOCK'})
 	setmetatable(w, {__index = function(self, idx)
 		if sockwrap[idx] then
 			return sockwrap[idx]
@@ -240,27 +241,30 @@ function server:go()
         end
         
         -- do the poll
-        local ret = p()
+        local ret = p(10000)
         assert(ret >= 0, "poll failed: " .. ffi.string(ffi.C.strerror(ffi.errno())))
-		if ret == 0 then
-			print("WARNING: empty poll")
-		else
-			-- process results
-			for pi = 0,p.size-1 do
-				local v = p:map(pi)
-				if p[pi]:test('out') then
-					if v._write_cb == nil or v._write_cb(self, v) ~= 'again' then
-						self._write:remove(v)
-					end
+
+		-- process results
+		local t = os.time()
+		for pi = 0,p.size-1 do
+			local v = p:map(pi)
+			if p[pi]:test('out') then
+				v.last_event = t
+				if v._write_cb == nil or v._write_cb(self, v) ~= 'again' then
+					self._write:remove(v)
 				end
-				if p[pi]:test('in') then
-					if v._read_cb == nil or v._read_cb(self, v) ~= 'again' then
-						self._read:remove(v)
-					end
+			end
+			if p[pi]:test('in') then
+				v.last_event = t
+				if v._read_cb == nil or v._read_cb(self, v) ~= 'again' then
+					self._read:remove(v)
 				end
-				if p[pi]:test('err') then
-					v:close()
-				end
+			end
+			if p[pi]:test('err') or p[pi]:test('hup') then
+				v:close()
+			end
+			if (t - v.last_event) > 30 and not v.notimeout then
+				v:close()
 			end
 		end
     end

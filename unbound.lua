@@ -139,7 +139,9 @@ function unbound.link_to_server(serv)
 		return 'again'
 	end
 	local q = {fd = lib.ub_fd(w._ctx)}
-	serv:wrap(q):wait_read(w._wait_cb)
+	local sw = serv:wrap(q)
+	sw.notimeout = true
+	sw:wait_read(w._wait_cb)
 end
 
 function unbound.resolve(name, cb)
