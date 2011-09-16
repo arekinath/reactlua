@@ -46,6 +46,8 @@ function fcntl.setflags(fd, flags)
 	local mask = nil
 	if ffi.os == 'Linux' then
 		mask = ffi.new('long[?]', 1)
+	elseif ffi.os == 'OSX' then
+		mask = ffi.new('uint16_t[?]', 1)
 	else
 		mask = ffi.new('int[?]', 1)
 	end
