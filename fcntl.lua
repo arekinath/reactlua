@@ -43,14 +43,7 @@ function fcntl.getflags(fd)
 end
 
 function fcntl.setflags(fd, flags)
-	local mask = nil
-	if ffi.os == 'Linux' then
-		mask = ffi.new('long[?]', 1)
-	elseif ffi.os == 'OSX' then
-		mask = ffi.new('uint16_t[?]', 1)
-	else
-		mask = ffi.new('int[?]', 1)
-	end
+	local mask = ffi.new('long[?]', 1)
 	mask[0] = fcntl.getflags(fd)
 	for i,flag in ipairs(flags) do
 		mask[0] = bit.bor(bit.tobit(tonumber(mask[0])), fcntl['O_'..string.upper(flag)])

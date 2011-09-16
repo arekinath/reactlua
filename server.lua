@@ -260,7 +260,7 @@ function server:go()
 					self._read:remove(v)
 				end
 			end
-			if p[pi]:test('err') or p[pi]:test('hup') then
+			if p[pi]:test('err') then
 				v:close()
 			end
 			if (t - v.last_event) > 30 and not v.notimeout then
