@@ -3,59 +3,12 @@ local socket = require('socket')
 local ffi = require('ffi')
 local file = require('file')
 local fcntl = require('fcntl')
+local http = require('http')
 local unbound = require('unbound')
-
-function log(conn, txt)
-	print(string.format("[%s:%s] (%s) %s", conn.remote.host,  conn.remote.port,
-										os.date("%c"), txt))
-end
+local log = require('log')
 
 local serv = tcpserver.new(arg[1] or 8080)
 unbound.link_to_server(serv)
-
-function parse_header(line)
-	local ret = {}
-	line = line:gsub('[\r\n]', '')
-	
-	local i,j = line:find("^[A-Z]+ ")
-	if not i or not j then print("bad method") return nil end
-	ret.method = line:sub(i, j-1)
-	line = line:sub(j+1)
-	
-	ret.url = {}
-	i,j = line:find("^[^ ]+ ")
-	if not i or not j then print("no url") return nil end
-	ret.url.raw = line:sub(i,j-1)
-	line = line:sub(j+1)
-	
-	local url = ret.url.raw
-	i,j = url:find("^[a-z]+://")
-	if i and j then
-		ret.url.protocol = url:sub(i,j-3)
-		local lkup = {http=80, https=443}
-		ret.url.port = lkup[ret.url.protocol]
-		url = url:sub(j+1)
-	end
-	
-	i,j = url:find("^[^:/]+")
-	if not i or not j then print("no hostname") return nil end
-	ret.url.host = url:sub(i,j)
-	url = url:sub(j+1)
-	
-	i,j = url:find("^:[^:/]+")
-	if i and j then
-		ret.url.port = url:sub(i+1, j)
-		url = url:sub(j+1)
-	end
-
-	ret.url.path = url
-	
-	i,j = line:find("^HTTP/[0-9.]+")
-	if not i or not j then print("no http sig") return nil end
-	ret.version = line:sub(6)
-	
-	return ret
-end
 
 serv:listen(function(serv, parent, client)
 	local self = {}
@@ -63,22 +16,12 @@ serv:listen(function(serv, parent, client)
 	self.serv = serv
 	self.lines = {}
 	
-	function self.line_cb(_, _, line)
-		table.insert(self.lines, line)
-		if #self.lines == 1 then
-			self.head = parse_header(self.lines[1])
-			if not self.head then
-				log(client, "400 bad request")
-				client:write("HTTP/1.0 400 Invalid Request\r\n\r\n", function() client:close() end)
-				return
-			end
-		elseif line == '\r\n' then
-			return self.process(self.head)
-		end
-		client:read_line(self.line_cb)
+	function self.got_head(head)
+		self.head = head
+		self.process()
 	end
 	
-	client:read_line(self.line_cb)
+	http.parse_proxy_headers(client, self.got_head)
 	
 	function self.try_connect(family, addr, len, cb)
 		local s = serv:wrap(socket.new(family, socket.SOCK_STREAM, socket.IPPROTO_TCP))
@@ -86,8 +29,7 @@ serv:listen(function(serv, parent, client)
 		return s:connect(ffi.cast('struct sockaddr*', a), ffi.sizeof(a[0]), cb)
 	end
 	
-	
-	function self.process(head)
+	function self.process()
 		local gotsock = false
 		local sockback = function(serv, rsock)
 			if rsock and not gotsock then
@@ -112,7 +54,7 @@ serv:listen(function(serv, parent, client)
 			return 'again'
 		end
 		
-		local r, err = unbound.resolve(head.url.host, cb)
+		local r, err = unbound.resolve(self.head.url.host, cb)
 		if not r then
 			local resp = "HTTP/1.0 500 Internal Server Error\r\n\r\n"
 			resp = resp .. "Proxy connect failed: " .. err .. "\r\n"
@@ -157,9 +99,7 @@ serv:listen(function(serv, parent, client)
 				rsock:pipe(client, nil, function()
 					rsock:close()
 					if do_ka then
-						self.lines = {}
-						self.head = nil
-						client:read_line(self.line_cb)
+						http.parse_proxy_headers(client, self.got_head)
 					else
 						client:close()
 					end
