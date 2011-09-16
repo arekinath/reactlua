@@ -80,8 +80,9 @@ serv:listen(function(serv, parent, client)
 			local have_host = false
 			local do_ka = false
 			-- reconstruct head part with just path
-			self.lines[1] = head.method .. " " .. head.url.path .. " HTTP/1.0\r\n"
-			for i,v in ipairs(self.lines) do
+			if head.url.path == '' then head.url.path = '/' end
+			head.lines[1] = head.method .. " " .. head.url.path .. " HTTP/1.1\r\n"
+			for i,v in ipairs(head.lines) do
 				if v:find('^Host%:') then
 					v = 'Host: ' .. head.url.host .. "\r\n"
 					have_host = true
@@ -97,6 +98,7 @@ serv:listen(function(serv, parent, client)
 			if not have_host then
 				adv = adv .. "Host: " .. head.url.host .. "\r\n"
 			end
+			adv = adv .. "Connection: close\r\n"
 			rsock:write(adv .. "\r\n", function()
 				rsock:pipe(client, nil, function()
 					rsock:close()
