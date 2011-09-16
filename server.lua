@@ -55,6 +55,7 @@ function sockwrap:connect(addr, len, ok_cb)
 	if res or (ffi.errno() == EAGAIN or ffi.errno() == EINPROGRESS) then
 		self._write_cb = ok_cb
 		self._server._write:insert(self)
+		return true
 	else
 		return nil, err
 	end

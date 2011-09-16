@@ -46,7 +46,9 @@ serv:listen(function(serv, parent, client)
 				if result.qtype == unbound.types.AAAA then family = socket.AF_INET6 end
 				if family then
 					for i,addr,len in result:addrs() do
-						self.try_connect(family, addr, len, sockback)
+						if self.try_connect(family, addr, len, sockback) and not gotsock then
+							return 'again'
+						end
 					end
 				end
 			end
