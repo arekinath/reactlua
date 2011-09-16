@@ -1,10 +1,12 @@
 local ffi = require('ffi')
 local bit = require('bit')
 local socket = require('socket')
+local server = require('server')
 
 local ipairs = ipairs
 local setmetatable = setmetatable
 local print = print
+local table = table
 
 unbound = {}
 local unbound = unbound
@@ -30,16 +32,33 @@ struct ub_result {
 };
 struct ub_ctx* ub_ctx_create(void);
 void ub_ctx_delete(struct ub_ctx* ctx);
-int ub_ctx_set_option(struct ub_ctx* ctx, char* opt, char* val);
+int ub_ctx_set_option(struct ub_ctx* ctx, const char* opt, const char* val);
 int ub_ctx_get_option(struct ub_ctx* ctx, char* opt, char** str);
 int ub_ctx_resolvconf(struct ub_ctx* ctx, char* fname);
 int ub_fd(struct ub_ctx* ctx);
 int ub_process(struct ub_ctx* ctx);
 const char* ub_strerror(int err);
+void ub_resolve_free(struct ub_result* result);
 
-struct ub_result *ubshim_get_result(void);
-int ubshim_get_err(void);
-int ubshim_resolve_async(struct ub_ctx* ctx, const char* name, int rrtype, int rrclass, int* async_id);
+struct ubshim_return;
+struct ubshim_return {
+	struct ubshim_return *next;
+	struct ubshim_return *prev;
+	int err;
+	void *data;
+	struct ub_result *result;
+};
+
+struct marker {
+	uint32_t idx;
+};
+
+struct ubshim_return *ubshim_queue_head(void);
+struct ubshim_return *ubshim_queue_tail(void);
+void ubshim_set_queue_head(struct ubshim_return *new);
+void ubshim_set_queue_tail(struct ubshim_return *new);
+int ubshim_resolve_async(struct ub_ctx* ctx, const char* name, int rrtype,
+						int rrclass, void *data, int* async_id);
 ]]
 
 -- don't load libunbound, luaevent_shim is linked against it
@@ -72,49 +91,71 @@ end
 ffi.metatype('struct ub_result', {__index = result})
 
 resolver = {}
-function resolver.new(name)
-	local w4 = {}
-	local w6 = {}
-	
-	w4._ctx = ffi.gc(lib.ub_ctx_create(), lib.ub_ctx_delete)
-	if w4._ctx == nil then
-		return nil, "Could not create unbound context"
-	end
-	local ret = lib.ubshim_resolve_async(w4._ctx, name, types.A, 1, nil)
-	if ret ~= 0 then
-		return nil, ffi.string(lib.ub_strerror(ret))
-	end
-	
-	w6._ctx = ffi.gc(lib.ub_ctx_create(), lib.ub_ctx_delete)
-	if w6._ctx == nil then
-		return nil, "Could not create unbound context"
-	end
-	ret = lib.ubshim_resolve_async(w6._ctx, name, types.AAAA, 1, nil)
-	if ret ~= 0 then
-		return nil, ffi.string(lib.ub_strerror(ret))
+
+resolver._context = ffi.gc(lib.ub_ctx_create(), lib.ub_ctx_delete)
+lib.ub_ctx_set_option(resolver._context, "cache-min-ttl", "300")
+
+function unbound.link_to_server(serv)
+	local cbt = {}
+	function cbt:insert(cb)
+		self._idx[0] = self._idx[0] + 1
+		self[self._idx[0]] = cb
+		return self._idx[0]
 	end
 	
-	w4.fd = lib.ub_fd(w4._ctx)
-	w6.fd = lib.ub_fd(w6._ctx)
-	
-	setmetatable(w4, {__index = resolver})
-	setmetatable(w6, {__index = resolver})
-	return w4, w6
+	local w = {_cbs = {_idx = ffi.new('uint32_t[?]',1)}, _markers = {}}
+	setmetatable(w._markers, {__index = table})
+	setmetatable(w._cbs, {__index = cbt})
+	resolver._cwrap = w
+	w._ctx = resolver._context
+	w._serv = serv
+	w._wait_cb = function()
+		local ret = lib.ub_process(w._ctx)
+		local p = lib.ubshim_queue_head()
+		while p ~= nil do
+			local marker = ffi.cast('struct marker*', p.data)
+			if w._cbs[marker.idx] ~= nil and w._cbs[marker.idx](p.err, p.result) ~= 'again' then
+				lib.ub_resolve_free(p.result)
+				w._cbs[marker.idx] = nil
+				local before = p.prev
+				local after = p.next
+				if before ~= nil then
+					before.next = after
+				else
+					lib.ubshim_set_queue_head(after)
+				end
+				if after ~= nil then
+					after.prev = before
+				else
+					lib.ubshim_set_queue_tail(before)
+				end
+				p = after
+			else
+				p = p.next
+			end
+		end
+		return 'again'
+	end
+	local q = {fd = lib.ub_fd(w._ctx)}
+	serv:wrap(q):wait_read(w._wait_cb)
 end
 
-function resolver:get_result()
-	local ret = lib.ub_process(self._ctx)
+function unbound.resolve(name, cb)
+	local idx = resolver._cwrap._cbs:insert(cb)
+	local mkr = ffi.new("struct marker[?]", 1)
+	mkr[0].idx = idx
+	
+	local ret = lib.ubshim_resolve_async(resolver._context, name, types.A, 1, mkr, nil)
+	if ret ~= 0 then
+		return nil, ffi.string(lib.ub_strerror(ret))
+	end
+
+	ret = lib.ubshim_resolve_async(resolver._context, name, types.AAAA, 1, mkr, nil)
 	if ret ~= 0 then
 		return nil, ffi.string(lib.ub_strerror(ret))
 	end
 	
-	ret = lib.ubshim_get_err()
-	if ret ~= 0 then
-		return nil, ffi.string(lib.ub_strerror(ret))
-	end
-	
-	self.result = lib.ubshim_get_result()
-	return self.result
+	return true
 end
 
 return unbound

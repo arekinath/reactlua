@@ -42,7 +42,6 @@ end
 
 function fcntl.setflag(fd, flag, erase)
 	mask = fcntl.getflags(fd)
-	if erase then mask = bit.tobit(0) end
     if type(flag) == 'string' then
         if fcntl[string.upper(flag)] then
             mask = bit.bor(mask, fcntl[string.upper(flag)])
@@ -51,6 +50,18 @@ function fcntl.setflag(fd, flag, erase)
         end
     end
     return ffi.C.fcntl(fd, F_SETFL, mask)
+end
+
+function fcntl.unsetflag(fd, flag)
+	mask = fcntl.getflags(fd)
+    if type(flag) == 'string' then
+        if fcntl[string.upper(flag)] then
+            mask = bit.band(mask, bit.bnot(fcntl[string.upper(flag)]))
+        elseif fcntl['O_'..string.upper(flag)] then
+            mask = bit.band(mask, bit.bnot(fcntl['O_'..string.upper(flag)]))
+        end
+    end
+	return ffi.C.fcntl(fd, F_SETFL, mask)
 end
 
 return fcntl

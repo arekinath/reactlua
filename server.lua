@@ -20,12 +20,18 @@ ffi.cdef[[
 typedef int32_t pid_t;
 pid_t fork(void);
 int pipe(int fildes[2]);
+uint32_t shim_get_symbol(const char *name);
 ]]
+
+local shim = ffi.load("luaevent_shim")
+
+EAGAIN = shim.shim_get_symbol('EAGAIN')
+EWOULDBLOCK = shim.shim_get_symbol('EWOULDBLOCK')
+EINPROGRESS = shim.shim_get_symbol('EINPROGRESS')
 
 sockwrap = {}
 function sockwrap.new(server, socket)
 	local w = {_server = server, _socket = socket}
-	print("new sockwrap:", w)
 	fcntl.setflag(socket.fd, 'nonblock', true)
 	setmetatable(w, {__index = function(self, idx)
 		if sockwrap[idx] then
@@ -44,32 +50,53 @@ function sockwrap:accept(cb)
 	end
 	self._server._read:insert(self)
 end
+function sockwrap:connect(addr, len, ok_cb)
+	local res,err = self._socket:connect(addr, len)
+	if res or (ffi.errno() == EAGAIN or ffi.errno() == EINPROGRESS) then
+		self._write_cb = ok_cb
+		self._server._write:insert(self)
+	else
+		return nil, err
+	end
+end
 function sockwrap:write(string, cb)
 	local buf = ffi.new('char[?]', #string + 1)
 	ffi.copy(buf, string)
 	self:write_buf(buf, #string, cb)
 end
 function sockwrap:write_buf(buf, len, cb)
-	self._write_cb = function(serv, sock)
-		fcntl.setflag(self._socket.fd, 'nonblock', true)
-		sock._socket:write(buf, len)
-		self._write_cb = nil
-		if cb then cb(serv, sock) end
+	local offset = 0
+	local ret = self._socket:write(buf, len)
+	if (ret < 0 and (ffi.errno() == EWOULDBLOCK or ffi.errno() == EAGAIN))
+			or (ret >= 0 and ret < offset) then	
+		if ret >= 0 then offset = offset + ret end
+		self._write_cb = function()
+			offset = offset + self._socket:write(buf + offset, len - offset)
+			if offset >= len then
+				if cb then cb(self._server, self) end
+			else
+				return 'again'
+			end
+		end
+		self._server._write:insert(self)
+	elseif ret >= offset then
+		return cb(self._server, self)
+	else
+		self:close()
 	end
-	self._server._write:insert(self)
 end
 function sockwrap:read_until(delim, max, cb)
 	local buf = ffi.new('char[?]', max+1)
 	local offset = 0
 	self._read_cb = function(serv, sock)
-		fcntl.setflag(self._socket.fd, 'nonblock', true)
 		local ret = self._socket:read(buf+offset, 1)
-		if (ret < 0 and ffi.errno() ~= 35 and ffi.errno() ~= 11) or (ret == 0) then
+		if (ret < 0 and ffi.errno() ~= EAGAIN and ffi.errno() ~= EWOULDBLOCK) or (ret == 0) then
 			sock:close()
 		else
 			if ret < 0 then ret = 0 end		-- deal with eagain/ewouldblock
 			offset = offset + ret
-			if ffi.string(buf + offset - #delim, #delim) == delim or offset == max then
+			local s_end = ffi.string(buf + offset - #delim, #delim)
+			if s_end == delim or offset == max then
 				self._read_cb = nil
 				return cb(serv, sock, buf)
 			end
@@ -91,9 +118,8 @@ function sockwrap:read(size, cb)
 	local buf = ffi.new('char[?]', size+1)
 	local offset = 0
 	self._read_cb = function(serv, sock)
-		fcntl.setflag(self._socket.fd, 'nonblock', true)
 		local ret = sock._socket:read(buf+offset, size-offset)
-		if (ret < 0 and ffi.errno() ~= 35 and ffi.errno() ~= 11) or (ret == 0) then
+		if (ret < 0 and ffi.errno() ~= EAGAIN and ffi.errno() ~= EWOULDBLOCK) or (ret == 0) then
 			sock:close()
 		else
 			if ret < 0 then ret = 0 end		-- deal with eagain/ewouldblock
@@ -108,19 +134,21 @@ function sockwrap:read(size, cb)
 	end
 	self._server._read:insert(self)
 end
-function sockwrap:pipe(other, size, cb)
+function sockwrap:pipe(other, size, eof_cb)
 	size = size or 4096
 	local buf = ffi.new('char[?]', size)
-	self._read_cb = function(serv, sock)
-		fcntl.setflag(self._socket.fd, 'nonblock', true)
-		local ret = sock._socket:read(buf, size)
-		if (ret < 0 and ffi.errno() ~= 35 and ffi.errno() ~= 11) or (ret == 0) then
-			self:close()
-			if not other.closed and not cb then other:close() end
-			if cb then cb(serv, other) end
+	self._read_cb = function()
+		local ret = self._socket:read(buf, size)
+		if (ret < 0 and ffi.errno() ~= EAGAIN and ffi.errno() ~= EWOULDBLOCK) or (ret == 0) then
+			if eof_cb then
+				eof_cb(self._server, self, other)
+			else
+				other:close()
+				self:close()
+			end
 		else 
 			if ret <= 0 then return 'again' end
-			other:write_buf(buf, ret, function(serv, sock)
+			other:write_buf(buf, ret, function()
 				self._server._read:insert(self)
 			end)
 		end
@@ -128,14 +156,11 @@ function sockwrap:pipe(other, size, cb)
 	self._server._read:insert(self)
 end
 function sockwrap:close()
-	print("sockwrap close: ", self)
 	self._socket:close()
-	if self._read_idx then self._server._read:remove(self._read_idx) end
+	self._server._read:remove(self)
 	self._read_cb = nil
-	self._read_idx = nil
-	if self._write_idx then self._server._write:remove(self._write_idx) end
+	self._server._write:remove(self)
 	self._write_cb = nil
-	self._write_idx = nil
 	self.closed = true
 end
 
@@ -148,12 +173,40 @@ end
 function delaytable:insert(val)
 	table.insert(self._queue, {m='insert', v=val})
 end
-function delaytable:remove(idx)
-	table.insert(self._queue, {m='remove', v=idx})
+function delaytable:remove(val)
+	table.insert(self._queue, {m='remove', v=val})
+end
+function delaytable:insert_now(val)
+	table.insert(self, val)
+end
+function delaytable:remove_now(val)
+	local i = 1
+	while i <= #self do
+		if self[i] == val then
+			table.remove(self, i)
+		else
+			i = i + 1
+		end
+	end
+end
+function delaytable:fdstring()
+	local s = "{"
+	for i,v in ipairs(self) do
+		s = s .. "#" .. tostring(v.fd) .. ", "
+	end
+	s = s .. "}"
+	return s
 end
 function delaytable:commit()
 	for i,v in ipairs(self._queue) do
-		table[v.m](self, v.v)
+		if v.m == 'remove' then
+			self:remove_now(v.v)
+		end
+	end
+	for i,v in ipairs(self._queue) do
+		if v.m == 'insert' then
+			self:insert_now(v.v)
+		end
 	end
 	self._queue = {}
 end
@@ -179,46 +232,34 @@ function server:go()
         -- make the fd list
         local p = poll.new(#self._read + #self._write)
         for i,v in ipairs(self._read) do
-			v._read_idx = i
-			if v.closed then self._read:remove(i) end
-            p:insert(v.fd, {'in', 'hup', 'err'}, v)
+            p:insert(v.fd, {'in'}, v)
         end
         for i,v in ipairs(self._write) do
-			v._write_idx = i
-			if v.closed then self._write:remove(i) end
-            p:insert(v.fd, {'out', 'hup', 'err'}, v)
+            p:insert(v.fd, {'out'}, v)
         end
         
         -- do the poll
         local ret = p()
-        assert(ret >= 0, "poll failed")
+        assert(ret >= 0, "poll failed: " .. ffi.string(ffi.C.strerror(ffi.errno())))
 		if ret == 0 then
 			print("WARNING: empty poll")
 		else
 			-- process results
 			for pi = 0,p.size-1 do
 				local v = p:map(pi)
-				if p[pi]:test('err') or p[pi]:test('hup') then
-					print("error on conn #" .. tostring(pi))
-					v:close()
-				else
-					if p[pi]:test('in') then
-						if v._read_cb == nil or v._read_cb(self, v) ~= 'again' then
-							if not v.closed then
-								self._read:remove(v._read_idx)
-							end
-						end
-					end
-					if p[pi]:test('out') then
-						if v._write_cb == nil or v._write_cb(self, v) ~= 'again' then
-							if not v.closed then
-								self._write:remove(v._write_idx)
-							end
-						end
+				if p[pi]:test('out') then
+					if v._write_cb == nil or v._write_cb(self, v) ~= 'again' then
+						self._write:remove(v)
 					end
 				end
-				v._read_idx = nil
-				v._write_idx = nil
+				if p[pi]:test('in') then
+					if v._read_cb == nil or v._read_cb(self, v) ~= 'again' then
+						self._read:remove(v)
+					end
+				end
+				if p[pi]:test('err') then
+					v:close()
+				end
 			end
 		end
     end

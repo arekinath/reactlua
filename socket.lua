@@ -156,6 +156,8 @@ ssize_t  read(int, void *, size_t);
 ssize_t  write(int, const void *, size_t);
 int      close(int);
 
+int shutdown(int socket, int how);
+
 const char *gai_strerror(int errcode);
 char *strerror(int errnum);
 ]]
@@ -164,13 +166,13 @@ local syms = {'SOCK_STREAM', 'SOCK_DGRAM', 'SOCK_RAW', 'SOCK_RDM', 'SOCK_SEQPACK
 	'SO_ACCEPTCONN', 'SO_REUSEADDR', 'SO_KEEPALIVE', 'SO_DONTROUTE',
 	'SO_BROADCAST', 'SO_USELOOPBACK', 'SO_LINGER', 'SO_OOBINLINE',
 	'SO_REUSEPORT', 'SO_JUMBO', 'SO_TIMESTAMP', 'SO_BINDANY', 'AF_UNSPEC',
-	'AF_LOCAL', 'AF_UNIX', 'AF_INET', 'NETDB_INTERNAL', 'NETDB_SUCCESS',
+	'AF_LOCAL', 'AF_UNIX', 'AF_INET', 'AF_INET6', 'NETDB_INTERNAL', 'NETDB_SUCCESS',
 	'HOST_NOT_FOUND', 'TRY_AGAIN', 'NO_RECOVERY', 'NO_DATA', 'NO_ADDRESS',
 	'NI_NUMERICHOST', 'NI_NUMERICSERV', 'NI_NOFQDN', 'NI_NAMEREQD', 'NI_DGRAM',
 	'AI_PASSIVE', 'AI_CANONNAME', 'AI_NUMERICHOST', 'AI_EXT', 'AI_NUMERICSERV',
 	'IPPROTO_IP', 'IPPROTO_HOPOPTS', 'IPPROTO_ICMP', 'IPPROTO_IGMP',
 	'IPPROTO_GGP', 'IPPROTO_IPIP', 'IPPROTO_TCP', 'IPPROTO_EGP', 'IPPROTO_PUP',
-	'IPPROTO_UDP'}
+	'IPPROTO_UDP', 'SHUT_RD', 'SHUT_WR', 'SHUT_RDWR'}
 for i,v in ipairs(syms) do
 	socket[v] = shim.shim_get_symbol(v)
 end
@@ -237,6 +239,25 @@ function socket.addrinfo.new(str, port, socktype, prot, flags)
     return ffi.gc(ai[0], ffi.C.freeaddrinfo)
 end
 
+function socket.makeaddr(family, port, addr)
+	local a = nil
+	port = socket.htons(tonumber(port))
+	if family == socket.AF_INET then
+		a = ffi.new("struct sockaddr_in[?]", 1)
+		if a[0].sin_len then a[0].sin_len = ffi.sizeof(a[0]) end
+		a[0].sin_port = port
+		a[0].sin_family = socket.AF_INET
+		ffi.copy(a[0].sin_addr, addr, ffi.sizeof(addr[0]))
+	elseif family == socket.AF_INET6 then
+		a = ffi.new("struct sockaddr_in6[?]", 1)
+		if a[0].sin6_len then a[0].sin6_len = ffi.sizeof(a[0]) end
+		a[0].sin6_port = port
+		a[0].sin6_family = socket.AF_INET6
+		ffi.copy(a[0].sin6_addr, addr, ffi.sizeof(addr[0]))
+	end
+	return a
+end
+
 function socket:get_remote()
 	local host = ffi.new("char[?]", 256)
 	local serv = ffi.new("char[?]", 16)
@@ -281,6 +302,11 @@ function socket:listen(backlog)
     return ret
 end
 
+function socket:shutdown(how)
+	how = how or 'rdwr'
+	return ffi.C.shutdown(self.fd, socket['SHUT_' .. string.upper(how)])
+end
+
 function socket:connect(addr, len)
 	len = len or addr.sa_len
 	local ret = ffi.C.connect(self.fd, addr, len)
@@ -316,7 +342,8 @@ function socket:write(buffer, size)
 end
 
 function socket:close()
-    return ffi.C.close(self.fd)
+    local ret = ffi.C.close(self.fd)
+	return ret
 end
 
 return socket

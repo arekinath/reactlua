@@ -25,8 +25,6 @@ function tcpserver.new(port)
 			return tcpserver[idx]
 		elseif server[idx] then
 			return server[idx]
-		elseif self._socket[idx] then
-			return self._socket[idx]
 		end
 	end })
     

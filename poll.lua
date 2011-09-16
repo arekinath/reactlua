@@ -97,6 +97,7 @@ function poll:insert(fd, evts, map)
 		self._nfds = self._nfds - 1
 		self.size = self._nfds
 	else
+		self._fdmap[fd] = self._i
 		self[self._i].fd = fd
 		self[self._i].events = 0
 		self[self._i].revents = 0

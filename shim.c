@@ -2,10 +2,12 @@
 #include <sys/types.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
+#include <sys/errno.h>
 #include <unistd.h>
 #include <netdb.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <fcntl.h>
 #include <poll.h>
 
@@ -13,35 +15,56 @@
 /* unbound shim */
 /****************/
 
-static struct ub_result *last_result = NULL;
-static int last_err;
+struct ubshim_return;
+struct ubshim_return {
+	struct ubshim_return *next;
+	struct ubshim_return *prev;
+	int err;
+	void *data;
+	struct ub_result *result;
+};
+static struct ubshim_return *rhead = NULL;
+static struct ubshim_return *rtail = NULL;
 
 static void callback(void *data, int err, struct ub_result *result)
 {
-	last_err = err;
-	if (err != 0)
-		return;
-	if (result->havedata) {
-		if (last_result) ub_resolve_free(last_result);
-		last_result = result;
+	if (rtail == NULL) {
+		rtail = calloc(sizeof(struct ubshim_return), 1);
+		rhead = rtail;
+	} else {
+		struct ubshim_return *new = calloc(sizeof(struct ubshim_return), 1);
+		new->prev = rtail;
+		rtail->next = new;
+		rtail = new;
 	}
+	rtail->err = err;
+	rtail->data = data;
+	rtail->result = result;
 }
 
-struct ub_result *ubshim_get_result(void)
+struct ubshim_return *ubshim_queue_head(void)
 {
-	struct ub_result *r = last_result;
-	last_result = NULL;
-	return r;
+	return rhead;
 }
 
-int ubshim_get_err(void)
+struct ubshim_return *ubshim_queue_tail(void)
 {
-	return last_err;
+	return rtail;
 }
 
-int ubshim_resolve_async(struct ub_ctx* ctx, const char* name, int rrtype, int rrclass, int* async_id)
+void ubshim_set_queue_head(struct ubshim_return *new)
 {
-	return ub_resolve_async(ctx, name, rrtype, rrclass, NULL, callback, async_id);
+	rhead = new;
+}
+
+void ubshim_set_queue_tail(struct ubshim_return *new)
+{
+	rtail = new;
+}
+
+int ubshim_resolve_async(struct ub_ctx* ctx, const char* name, int rrtype, int rrclass, void *data, int* async_id)
+{
+	return ub_resolve_async(ctx, name, rrtype, rrclass, data, callback, async_id);
 }
 
 /****************/
@@ -159,6 +182,12 @@ static struct map mappings[] = {
 #ifdef O_ASYNC
 	{ "O_ASYNC", O_ASYNC },
 #endif
+	{ "EAGAIN", EAGAIN },
+	{ "EWOULDBLOCK", EWOULDBLOCK },
+	{ "EINPROGRESS", EINPROGRESS },
+	{ "SHUT_RD", SHUT_RD },
+	{ "SHUT_WR", SHUT_WR },
+	{ "SHUT_RDWR", SHUT_RDWR },
 	{ 0, 0 }
 };
 
