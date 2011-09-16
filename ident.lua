@@ -5,6 +5,7 @@ local ffi = require('ffi')
 
 local tostring = tostring
 local tonumber = tonumber
+local print = print
 
 ident = {}
 local ident = ident
@@ -28,17 +29,11 @@ function ident.resolve(serv, port, remote, cb)
 		s:write(tostring(port) .. ", " .. tostring(remote.port) .. "\n", function()
 			s:read_line(function(_, _, line) 
 				local tbl = {}
-			
-				local i,j = line:find("^[0-9]+, [0-9] %: ")
-				line = line:sub(j+1)
-				i,j = line:find("^[^ :]+ : ")
-				tbl.resp = line:sub(i, j-3)
-				line = line:sub(j+1)
+				line = line:gsub("[\r\n]", "")
+				
+				tbl.resp, line = line:match("^[0-9]+,%s?[0-9]+%s?%:%s?([^ :]+)%s?%:%s?(.+)")
 				if tbl.resp == "USERID" then
-					i,j = line:find("^[^ :]+ : ")
-					tbl.sys = line:sub(i, j-3)
-					line = line:sub(j+1)
-					tbl.user = line
+					tbl.sys, tbl.user = line:match("^([^ :]+)%s?%:%s?([^ :]+)")
 				elseif resp == "ERROR" then
 					tbl.error = line
 				end
