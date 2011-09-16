@@ -164,6 +164,7 @@ function sockwrap:close()
 	self._server._write:remove(self)
 	self._write_cb = nil
 	self.closed = true
+	if self._close_cb then self._close_cb(self._server, self) end
 end
 
 local delaytable = {}
@@ -263,7 +264,7 @@ function server:go()
 			if p[pi]:test('err') then
 				v:close()
 			end
-			if (t - v.last_event) > 30 and not v.notimeout then
+			if (t - v.last_event) > (v.timeout or 30) and not v.notimeout then
 				v:close()
 			end
 		end

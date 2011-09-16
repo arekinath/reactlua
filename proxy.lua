@@ -5,23 +5,40 @@ local file = require('file')
 local fcntl = require('fcntl')
 local http = require('http')
 local unbound = require('unbound')
+local ident = require('ident')
 local log = require('log')
 
-local serv = tcpserver.new(arg[1] or 8080)
+local port = arg[1] or 8080
+
+local serv = tcpserver.new(port)
 unbound.link_to_server(serv)
+
+local ident_fails = {}
+setmetatable(ident_fails, {__index = function() return 0 end})
 
 serv:listen(function(serv, parent, client)
 	local self = {}
 	self.client = client
 	self.serv = serv
-	self.lines = {}
+	local host = client.remote.host
 	
 	function self.got_head(head)
 		self.head = head
 		self.process()
 	end
 	
-	http.parse_proxy_headers(client, self.got_head)
+	if ident_fails[host] < 5 then
+		ident.resolve(serv, port, client.remote, function(id)
+			if id.user then
+				log.ident = id.user
+			elseif not id.error then
+				ident_fails[host] = ident_fails[host] + 1
+			end
+			http.parse_proxy_headers(client, self.got_head)
+		end)
+	else
+		http.parse_proxy_headers(client, self.got_head)
+	end
 	
 	function self.try_connect(family, addr, len, cb)
 		local s = serv:wrap(socket.new(family, socket.SOCK_STREAM, socket.IPPROTO_TCP))
