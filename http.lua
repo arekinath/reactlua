@@ -16,6 +16,8 @@ function _parse_url(ret, url)
 	if not prot then
 		rest = url
 		ret.protocol = "http"
+	else
+		ret.protocol = prot
 	end
 	ports = {http=80, https=443}
 	ret.port = ports[ret.protocol]

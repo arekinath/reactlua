@@ -85,7 +85,9 @@ serv:listen(function(serv, parent, client)
 	function self.proxy(rsock)
 		local head = self.head
 		
-		log(client, head.method .. " " .. head.url.raw)
+		log(client, head.method .. " " .. head.url.protocol .. "://" 
+				.. head.url.host .. ":" .. head.url.port .. head.url.path)
+				
 		if head.method == 'CONNECT' then
 			local resp = "HTTP/"..head.version.." 200 Connection Established\r\n\r\n"
 			client:write(resp, function()
