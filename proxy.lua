@@ -85,11 +85,11 @@ serv:listen(function(serv, parent, client)
 	function self.proxy(rsock)
 		local head = self.head
 		
-		log(client, head.method .. " " .. head.url.protocol .. "://" 
-				.. head.url.host .. ":" .. head.url.port .. head.url.path)
+		local before = head.url.raw:match("^([^%?]+)%?")
+		log(client, head.method .. " " .. (before or head.url.raw))
 				
 		if head.method == 'CONNECT' then
-			local resp = "HTTP/"..head.version.." 200 Connection Established\r\n\r\n"
+			local resp = "HTTP/1.0 200 Connection Established\r\n\r\n"
 			client:write(resp, function()
 				rsock:pipe(client)
 				client:pipe(rsock)

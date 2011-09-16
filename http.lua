@@ -22,17 +22,16 @@ function _parse_url(ret, url)
 	ports = {http=80, https=443}
 	ret.port = ports[ret.protocol]
 	
-	local host, path = rest:match("^([^/]+)(/.*)$")
-	if not host or not path then return nil end
-	ret.path = path
+	local host, rest = rest:match("^([^/%:]+)(.-)$")
+	if not host or not rest then return nil end
+	ret.host = host
 	
-	local h, port = host:match("^([^%:])%:([0-9]+)$")
-	if h and port then
-		ret.host = h
+	local port, rem = rest:match("^%:([0-9]+)(.-)$")
+	if port then
+		rest = rem
 		ret.port = port
-	else
-		ret.host = host
 	end
+	ret.path = rest
 	
 	return ret
 end
