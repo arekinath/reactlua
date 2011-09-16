@@ -3,6 +3,9 @@ local server = require('server')
 local bit = require('bit')
 local ffi = require('ffi')
 
+local tostring = tostring
+local tonumber = tonumber
+
 ident = {}
 local ident = ident
 setfenv(1, ident)
