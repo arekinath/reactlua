@@ -59,6 +59,8 @@ void ubshim_set_queue_head(struct ubshim_return *new);
 void ubshim_set_queue_tail(struct ubshim_return *new);
 int ubshim_resolve_async(struct ub_ctx* ctx, const char* name, int rrtype,
 						int rrclass, void *data, int* async_id);
+						
+void free(void *ptr);
 ]]
 
 -- don't load libunbound, luaevent_shim is linked against it
@@ -115,24 +117,24 @@ function unbound.link_to_server(serv)
 		while p ~= nil do
 			local marker = ffi.cast('struct marker*', p.data)
 			if w._cbs[marker.idx] ~= nil and w._cbs[marker.idx](p.err, p.result) ~= 'again' then
-				lib.ub_resolve_free(p.result)
 				w._cbs[marker.idx] = nil
-				local before = p.prev
-				local after = p.next
-				if before ~= nil then
-					before.next = after
-				else
-					lib.ubshim_set_queue_head(after)
-				end
-				if after ~= nil then
-					after.prev = before
-				else
-					lib.ubshim_set_queue_tail(before)
-				end
-				p = after
-			else
-				p = p.next
+				resolver._cwrap._markers[marker.idx] = nil
 			end
+			lib.ub_resolve_free(p.result)
+			local before = p.prev
+			local after = p.next
+			if before ~= nil then
+				before.next = after
+			else
+				lib.ubshim_set_queue_head(after)
+			end
+			if after ~= nil then
+				after.prev = before
+			else
+				lib.ubshim_set_queue_tail(before)
+			end
+			ffi.C.free(p)
+			p = after
 		end
 		return 'again'
 	end
@@ -144,6 +146,7 @@ function unbound.resolve(name, cb)
 	local idx = resolver._cwrap._cbs:insert(cb)
 	local mkr = ffi.new("struct marker[?]", 1)
 	mkr[0].idx = idx
+	resolver._cwrap._markers[idx] = mkr
 	
 	local ret = lib.ubshim_resolve_async(resolver._context, name, types.A, 1, mkr, nil)
 	if ret ~= 0 then
