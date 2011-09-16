@@ -3,50 +3,50 @@ local log = require('log')
 local string = string
 local print = print
 local table = table
+local pairs = pairs
+local type = type
+local tostring = tostring
 
 http = {}
 local http = http
 setfenv(1, http)
 
+function _parse_url(ret, url)
+	local prot, rest = url:match("^([a-z]+)%://(.+)$")
+	if not prot then
+		rest = url
+		ret.protocol = "http"
+	end
+	ports = {http=80, https=443}
+	ret.port = ports[ret.protocol]
+	
+	local host, path = rest:match("^([^/]+)(/.*)$")
+	if not host or not path then return nil end
+	ret.path = path
+	
+	local h, port = host:match("^([^%:])%:([0-9]+)$")
+	if h and port then
+		ret.host = h
+		ret.port = port
+	else
+		ret.host = host
+	end
+	
+	return ret
+end
+
 function _parse_proxy_salute(ret, line)
 	line = line:gsub('[\r\n]', '')
 	
-	local i,j = line:find("^[A-Z]+ ")
-	if not i or not j then print("bad method") return nil end
-	ret.method = line:sub(i, j-1)
-	line = line:sub(j+1)
+	local method, url, ver = line:match("^([A-Z]+)%s+([^ ]+)%s+HTTP/([0-9%.]+)$")
+	if not method or not url or not ver then return nil end
 	
+	ret.method = method
 	ret.url = {}
-	i,j = line:find("^[^ ]+ ")
-	if not i or not j then print("no url") return nil end
-	ret.url.raw = line:sub(i,j-1)
-	line = line:sub(j+1)
+	ret.url.raw = url
+	ret.version = ver
 	
-	local url = ret.url.raw
-	i,j = url:find("^[a-z]+://")
-	if i and j then
-		ret.url.protocol = url:sub(i,j-3)
-		local lkup = {http=80, https=443}
-		ret.url.port = lkup[ret.url.protocol]
-		url = url:sub(j+1)
-	end
-	
-	i,j = url:find("^[^:/]+")
-	if not i or not j then print("no hostname") return nil end
-	ret.url.host = url:sub(i,j)
-	url = url:sub(j+1)
-	
-	i,j = url:find("^:[^:/]+")
-	if i and j then
-		ret.url.port = url:sub(i+1, j)
-		url = url:sub(j+1)
-	end
-
-	ret.url.path = url
-	
-	i,j = line:find("^HTTP/[0-9.]+")
-	if not i or not j then print("no http sig") return nil end
-	ret.version = line:sub(6)
+	if http._parse_url(ret.url, ret.url.raw) == nil then return nil end
 	
 	return ret
 end
