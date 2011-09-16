@@ -106,7 +106,7 @@ function sockwrap:read_until(delim, max, cb)
 	self._server._read:insert(self)
 end
 function sockwrap:read_line(cb)
-	self:read_until("\n", 1024, function(serv, sock, buf)
+	self:read_until("\n", 4096, function(serv, sock, buf)
 		cb(serv, sock, ffi.string(buf))
 	end)
 end
