@@ -8,6 +8,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <netinet/in.h>
 #include <fcntl.h>
 #include <poll.h>
 
