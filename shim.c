@@ -3,6 +3,7 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <sys/errno.h>
+#include <signal.h>
 #include <unistd.h>
 #include <netdb.h>
 #include <stddef.h>
@@ -189,6 +190,7 @@ static struct map mappings[] = {
 	{ "SHUT_RD", SHUT_RD },
 	{ "SHUT_WR", SHUT_WR },
 	{ "SHUT_RDWR", SHUT_RDWR },
+	{ "SIGPIPE", SIGPIPE },
 	{ 0, 0 }
 };
 
@@ -199,6 +201,11 @@ uint32_t shim_get_symbol(const char *name)
 		++m;
 	if (m->name) return m->value;
 	return 0;
+}
+
+void shim_do_sigpipe(void)
+{
+	signal(SIGPIPE, SIG_IGN);
 }
 
 uint8_t shim_canon_first(void)

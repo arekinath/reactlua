@@ -18,10 +18,11 @@ setfenv(1, socket)
 ffi.cdef[[
 uint32_t shim_get_symbol(const char *name);
 uint8_t shim_canon_first(void);
+void shim_do_sigpipe(void);
 ]]
 
 local shim = ffi.load("luaevent_shim")
-
+shim.shim_do_sigpipe()
 
 ffi.cdef[[
 typedef long ssize_t;
@@ -309,7 +310,6 @@ function socket:shutdown(how)
 end
 
 function socket:connect(addr, len)
-	len = len or addr.sa_len
 	local ret = ffi.C.connect(self.fd, addr, len)
 	if ret < 0 then
 		return nil, ffi.string(ffi.C.strerror(ffi.errno()))
