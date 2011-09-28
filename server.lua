@@ -82,7 +82,11 @@ function sockwrap:write_buf(buf, len, cb)
 		end
 		self._server._write:insert(self)
 	elseif ret >= offset then
-		return cb(self._server, self)
+		if cb then
+			return cb(self._server, self)
+		else
+			return nil
+		end
 	else
 		self:close()
 	end
@@ -115,6 +119,10 @@ end
 function sockwrap:wait_read(cb)
 	self._read_cb = cb
 	self._server._read:insert(self)
+end
+function sockwrap:wait_write(cb)
+	self._write_cb = cb
+	self._server._write:insert(self)
 end
 function sockwrap:read(size, cb)
 	local buf = ffi.new('char[?]', size+1)
