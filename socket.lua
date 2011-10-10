@@ -202,12 +202,10 @@ INADDR_BROADCAST = htonl(0xffffffff)
 socket.address = {}
 
 ffi.metatype('struct addrinfo', {__index = function(self, idx)
-    if self['ai_' .. idx] then
-        return self['ai_' .. idx]
-    elseif socket.address[idx] then
+    if socket.address[idx] then
         return socket.address[idx]
-    else
-        return nil
+    elseif not idx:find("^ai_") then
+        return self['ai_' .. idx]
     end
 end })
 
