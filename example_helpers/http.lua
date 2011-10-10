@@ -1,4 +1,4 @@
-local log = require('log')
+local log = require('example_helpers.log')
 
 local string = string
 local print = print
