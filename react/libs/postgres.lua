@@ -1,7 +1,7 @@
 local ffi = require('ffi')
 local bit = require('bit')
-local socket = require('socket')
-local server = require('server')
+local socket = require('react.unix.socket')
+local server = require('react.server')
 
 local ipairs = ipairs
 local setmetatable = setmetatable

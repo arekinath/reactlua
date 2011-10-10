@@ -1,9 +1,9 @@
 local ffi = require('ffi')
-local poll = require('poll')
-local socket = require('socket')
+local poll = require('react.unix.poll')
+local socket = require('react.unix.socket')
 local bit = require('bit')
-local server = require('server')
-local fcntl = require('fcntl')
+local server = require('react.server')
+local fcntl = require('react.unix.fcntl')
 
 local table = table
 local ipairs = ipairs

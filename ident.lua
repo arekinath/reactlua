@@ -1,7 +1,7 @@
-local socket = require('socket')
-local server = require('server')
 local bit = require('bit')
 local ffi = require('ffi')
+local socket = require('react.unix.socket')
+local server = require('react.server')
 
 local tostring = tostring
 local tonumber = tonumber

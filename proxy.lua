@@ -1,10 +1,7 @@
-local tcpserver = require('tcpserver')
-local socket = require('socket')
 local ffi = require('ffi')
-local file = require('file')
-local fcntl = require('fcntl')
+local tcpserver = require('react.tcpserver')
+local unbound = require('react.libs.unbound')
 local http = require('http')
-local unbound = require('unbound')
 local ident = require('ident')
 local log = require('log')
 

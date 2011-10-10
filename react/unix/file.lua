@@ -1,5 +1,5 @@
 local bit = require('bit')
-local fcntl = require('fcntl')
+local fcntl = require('react.unix.fcntl')
 local ffi = require('ffi')
 
 local string = string
