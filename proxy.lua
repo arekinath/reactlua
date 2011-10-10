@@ -1,8 +1,12 @@
+--[[
+A basic http(s) proxy server in react.lua
+]]
+
 local ffi = require('ffi')
 local tcpserver = require('react.tcpserver')
 local unbound = require('react.libs.unbound')
-local http = require('http')
-local ident = require('ident')
+local http = require('example_helpers.http')
+local ident = require('react.client.ident')
 local log = require('log')
 
 local port = arg[1] or 8080
