@@ -55,6 +55,12 @@ typedef enum
         PQTRANS_INERROR,                        /* idle, within failed transaction */
         PQTRANS_UNKNOWN                         /* cannot determine status */
 } PGTransactionStatusType;
+typedef struct pgNotify
+{
+        char       *relname;            /* notification condition name */
+        int                     be_pid;                 /* process ID of notifying server process */
+        char       *extra;                      /* notification parameter */
+} PGnotify;
 typedef struct pg_conn PGconn;
 typedef struct pg_result PGresult;
 typedef struct pg_cancel PGcancel;
@@ -82,6 +88,8 @@ extern int      PQntuples(const PGresult *res);
 extern int      PQnfields(const PGresult *res);
 extern char *PQgetvalue(const PGresult *res, int tup_num, int field_num);
 extern PGresult *PQgetResult(PGconn *conn);
+extern PGnotify *PQnotifies(PGconn *conn);
+extern void PQfreemem(void *ptr);
 ]]
 
 local lib = ffi.load("pq")
@@ -137,6 +145,27 @@ end
 function conn:is_busy()
 	return lib.PQisBusy(self._c)
 end
+function conn:listen(note, cb)
+	self:query("LISTEN " .. note, function()
+		self:wait_read(function()
+			assert(self:consume_input() == 1)
+			local noti = lib.PQnotifies(self._c)
+			if noti ~= nil then
+				lib.PQfreemem(noti)
+				self:query("UNLISTEN " .. note, cb)
+			else
+				return 'again'
+			end
+		end)
+	end)
+end
+function conn:after_queue(cb)
+	if self.query_running then
+		self._q:enqueue({ cb=cb })
+	else
+		cb()
+	end
+end
 function conn:query(sql, cb)
 	if self.query_running then
 		self._q:enqueue({ sql=sql, cb=cb })
@@ -157,7 +186,11 @@ function conn:query(sql, cb)
 				if self._q:has_entries() then
 					local ent = self._q:dequeue()
 					self.query_running = nil
-					self:query(ent.sql, ent.cb)
+					if ent.sql then
+						self:query(ent.sql, ent.cb)
+					else
+						ent.cb()
+					end
 				else
 					self.query_running = nil
 				end
